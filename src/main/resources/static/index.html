@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Woot deals, biggest savings first</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --paper: #F2F4F7; --ink: #14213D; --muted: #5B6478; --rule: #D5DAE3;
+      --sticker: #FFD84D; --sticker-ink: #14213D; --card: #FFFFFF;
+      --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+      --body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --paper: #121826; --ink: #E8ECF2; --muted: #A0A9BB; --rule: #2A3346; --card: #1A2233; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.5 var(--body); }
+    main { max-width: 860px; margin: 0 auto; padding: 32px 20px 64px; }
+    h1 { font: 800 clamp(2rem, 6vw, 3.25rem)/1.05 var(--display); margin: 0 0 8px; letter-spacing: -0.02em; }
+    .lede { color: var(--muted); margin: 0 0 24px; max-width: 60ch; }
+    .controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-bottom: 8px; }
+    select, button { font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--rule);
+      border-radius: 8px; padding: 8px 12px; }
+    button { cursor: pointer; }
+    :focus-visible { outline: 3px solid var(--sticker); outline-offset: 2px; }
+    .status { color: var(--muted); font-size: 0.9rem; min-height: 1.5em; margin: 8px 0 16px; }
+    .status.error { color: #C8102E; }
+    ol { list-style: none; margin: 0; padding: 0; }
+    li { display: grid; grid-template-columns: 2.5rem 72px 1fr auto; gap: 16px; align-items: center;
+      padding: 14px 0; border-top: 1px solid var(--rule); }
+    .rank { font: 800 1.4rem var(--display); color: var(--muted); text-align: right; }
+    .thumb { width: 72px; height: 72px; object-fit: contain; background: #fff; border-radius: 6px; }
+    .title { font-weight: 600; color: var(--ink); text-decoration: none; }
+    .title:hover { text-decoration: underline; }
+    .prices { color: var(--muted); font-size: 0.9rem; }
+    .prices s { margin-left: 6px; }
+    .soldout { display: inline-block; margin-left: 8px; font-size: 0.8rem; color: #C8102E; }
+    .sticker { background: var(--sticker); color: var(--sticker-ink); border-radius: 50% 46% 52% 48%;
+      width: 96px; height: 96px; display: grid; place-content: center; text-align: center; transform: rotate(-6deg); }
+    .sticker strong { font: 800 1.3rem/1 var(--display); display: block; }
+    .sticker span { font-size: 0.75rem; }
+    @media (max-width: 560px) {
+      li { grid-template-columns: 2rem 1fr auto; }
+      .thumb { display: none; }
+      .sticker { width: 80px; height: 80px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Woot deals, biggest savings first</h1>
+  <p class="lede">Current offers ranked by how many dollars you save off the list price.</p>
+
+  <div class="controls">
+    <label>Feed <select id="feed"></select></label>
+    <label><input type="checkbox" id="soldOut"> Include sold out</label>
+    <button id="refresh" type="button">Refresh</button>
+  </div>
+  <p class="status" id="status" role="status"></p>
+  <ol id="deals"></ol>
+</main>
+
+<script>
+  const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+  const $ = (id) => document.getElementById(id);
+
+  function el(tag, props = {}, ...children) {
+    const node = Object.assign(document.createElement(tag), props);
+    node.append(...children);
+    return node;
+  }
+
+  function renderDeal(deal, index) {
+    const from = deal.hasPriceRange ? "from " : "";
+    const title = el("a", { className: "title", href: deal.url, target: "_blank", rel: "noopener",
+      textContent: deal.title });
+    const details = el("div", {}, title);
+    if (deal.soldOut) details.append(el("span", { className: "soldout", textContent: "Sold out" }));
+    details.append(el("div", { className: "prices" },
+      `${from}${money.format(deal.salePrice)}`, el("s", { textContent: money.format(deal.listPrice) }),
+      ` (${deal.percentOff}% off)`));
+
+    const thumb = el("img", { className: "thumb", src: deal.photo || "", alt: "", loading: "lazy" });
+    const sticker = el("div", { className: "sticker" },
+      el("span", { textContent: "save" }),
+      el("strong", { textContent: money.format(deal.savings).replace(/\.00$/, "") }));
+
+    return el("li", {}, el("div", { className: "rank", textContent: index + 1 }), thumb, details, sticker);
+  }
+
+  async function loadDeals() {
+    const status = $("status");
+    status.className = "status";
+    status.textContent = "Loading deals…";
+    const params = new URLSearchParams({ feed: $("feed").value || "All", includeSoldOut: $("soldOut").checked });
+
+    try {
+      const res = await fetch(`/api/deals?${params}`);
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.detail || `Request failed with HTTP ${res.status}`);
+
+      $("deals").replaceChildren(...body.deals.map(renderDeal));
+      const time = new Date(body.fetchedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      status.textContent = body.count
+        ? `${body.count} deals in ${body.marketingName || body.feed}, prices as of ${time}`
+        : "No discounted offers in this feed right now. Try another feed.";
+    } catch (err) {
+      $("deals").replaceChildren();
+      status.className = "status error";
+      status.textContent = err.message;
+    }
+  }
+
+  async function init() {
+    const feeds = await fetch("/api/feeds").then((r) => r.json());
+    $("feed").replaceChildren(...feeds.map((f) => el("option", { value: f, textContent: f })));
+    ["feed", "soldOut"].forEach((id) => $(id).addEventListener("change", loadDeals));
+    $("refresh").addEventListener("click", loadDeals);
+    loadDeals();
+  }
+
+  init();
+</script>
+</body>
+</html>

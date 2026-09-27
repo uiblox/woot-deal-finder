@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: woot-deals
+
+woot:
+  base-url: https://developer.woot.com
+  # Never hardcode the key. It is read from the WOOT_API_KEY environment variable.
+  api-key: ${WOOT_API_KEY:}
+  # Woot allows 1,000 requests/day, so feeds are cached and refreshed on this interval.
+  cache-refresh-minutes: 10
